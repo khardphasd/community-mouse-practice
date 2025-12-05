@@ -107,7 +107,7 @@
 
                 <div class="text-center">
                     <button id="email-button" class="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-300">
-                        Email Report to Teacher
+                        Submit Data to Teacher's Sheet
                     </button>
                     <button id="restart-button" class="mt-4 w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-300">
                         Start Over
@@ -132,6 +132,24 @@
             { id: 'hospital', name: 'Hospital', icon: '🏥', color: 'purple-500' },
             { id: 'library', name: 'Library', icon: '📚', color: 'yellow-500' }
         ];
+
+        // !!! FORM SUBMISSION CONFIGURATION - CORRECTED !!!
+        // This is the submission endpoint for the user's Google Form.
+        const FORM_SUBMISSION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSf6QePrHAUAohHSiJ-qNtgGCy708J6LSZyOH35W7svaQ0YFyQ/formResponse"; 
+        
+        // These IDs are extracted directly from the user's pre-filled link.
+        const FORM_FIELD_IDS = {
+            userId: 'entry.1118925493',      // Correct ID for User ID
+            timeSpent: 'entry.1759795426',   // Correct ID for Time Spent
+            successRate: 'entry.164483531',  // Correct ID for Success Rate
+            feedback: 'entry.505531947',     // Correct ID for Actionable Feedback
+            improvement: 'entry.498032036',  // Correct ID for How to Improve
+        };
+
+        // Validation flags (should now pass)
+        const FORM_URL_CHECKER = FORM_SUBMISSION_URL.includes("/formResponse"); 
+        const IS_PLACEHOLDER_ID_USED = false; // Manually set to false as IDs are updated
+
 
         // --- FIREBASE SETUP ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -549,50 +567,51 @@
             `;
             
             // Update email button link
-            emailButton.onclick = () => sendEmailReport(sessionData);
+            emailButton.onclick = () => submitFormReport(sessionData);
 
             // Save data to Firestore (non-blocking)
             saveSessionData(sessionData);
         }
 
-        function sendEmailReport(data) {
-            const teacherEmail = "khard@phasd.us";
-            // Use the first 8 characters of userId for a concise subject
-            const subject = encodeURIComponent(`Kindergarten Mouse Practice Report - User ${data.userId.substring(0, 8)}`);
+        function submitFormReport(data) {
+            // Check for both the correct URL format and whether the placeholder IDs have been replaced.
+            if (!FORM_URL_CHECKER || IS_PLACEHOLDER_ID_USED) {
+                console.error("FORM_SUBMISSION_URL or FORM_FIELD_IDS are set incorrectly. Please ensure the field IDs have been replaced using the steps provided.");
+                document.getElementById('report-feedback').innerHTML = '<p class="text-red-600 font-bold">ERROR: Please tell the teacher to set up the correct Google Form submission link and REPLACE THE FIELD IDs in the code (see instructions in console)!</p>';
+                return;
+            }
+
+            const timeString = `${Math.floor(data.totalTimeSpentSeconds / 60)}m ${data.totalTimeSpentSeconds % 60}s`;
+
+            // Map data to the Google Form's entry IDs. 
+            const formFields = {
+                [FORM_FIELD_IDS.userId]: data.userId, 
+                [FORM_FIELD_IDS.timeSpent]: timeString, 
+                [FORM_FIELD_IDS.successRate]: `${data.successRate}% (${data.correctClicks} / ${gameState.totalTargets})`, 
+                [FORM_FIELD_IDS.feedback]: data.feedbackSummary, 
+                [FORM_FIELD_IDS.improvement]: data.feedbackImprovement, 
+            };
+
+            const params = new URLSearchParams();
+            for (const key in formFields) {
+                params.append(key, formFields[key]);
+            }
+
+            // Construct the pre-filled submission URL
+            const finalFormLink = `${FORM_SUBMISSION_URL}?${params.toString()}`;
             
-            const body = `
-Student Mouse Practice Report:
-------------------------------------------
-User ID (for teacher tracking): ${data.userId}
-App ID: ${appId}
-
-Date Completed: ${new Date().toLocaleDateString()}
-Time Spent: ${Math.floor(data.totalTimeSpentSeconds / 60)}m ${data.totalTimeSpentSeconds % 60}s
-
-Success Rate: ${data.successRate}%
-Correct Clicks: ${data.correctClicks}
-Incorrect Clicks: ${data.incorrectClicks}
-Total Clicks: ${data.totalClicks}
-
-Actionable Feedback:
-${data.feedbackSummary}
-
-How to Improve:
-${data.feedbackImprovement}
-
-(Note: Full session data is stored in the student's personal cloud space.)
-`;
-            const mailtoLink = `mailto:${teacherEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
+            console.log("Opening Google Form submission link:", finalFormLink);
             
-            console.log("Attempting to open mailto link:", mailtoLink);
-            
-            // This is the standard way to trigger the email client
-            window.location.href = mailtoLink;
+            // Open the link in a new tab for easy submission
+            window.open(finalFormLink, '_blank');
         }
 
         // --- EVENT LISTENERS ---
         startButton.addEventListener('click', startGame);
         restartButton.addEventListener('click', startGame);
+        // Ensure the button listener uses the `submitFormReport` function with current session data
+        emailButton.addEventListener('click', () => submitFormReport(gameState)); 
+        
         speakButton.addEventListener('click', () => {
             // Re-trigger speech when the button is clicked
             const targetName = targetPrompt.textContent;
